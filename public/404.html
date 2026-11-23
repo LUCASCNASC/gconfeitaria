@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>G Confeitaria | Redirecionando</title>
+    <script>
+      sessionStorage.setItem('gconfeitaria:redirect', location.pathname + location.search + location.hash)
+      location.replace('/')
+    </script>
+  </head>
+  <body>
+    <p>Redirecionando para a G Confeitaria...</p>
+    <noscript>Ative o JavaScript para acessar esta página.</noscript>
+  </body>
+</html>
