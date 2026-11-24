@@ -83,6 +83,8 @@ npm run build
 
 ## Publicação
 
-O GitHub Pages hospeda somente o frontend estático: ele não executa esta API nem consegue acessar um PostgreSQL instalado no computador. Para uso publicado, hospede a API e o banco em serviços acessíveis pela internet; configure as credenciais e `SESSION_SECRET` no ambiente do servidor, nunca no Vue ou em variáveis `VITE_*`.
+Para publicar o frontend em `https://lucascnasc.github.io/gconfeitaria/`, acesse **Settings → Pages → Build and deployment → Source** no repositório e selecione **GitHub Actions**. Faça commit e push para `main` e acompanhe o workflow **Publicar no GitHub Pages** na aba **Actions**. O workflow gera o site com a base `/gconfeitaria/`; não publique diretamente os arquivos da branch sem executar o build.
+
+O GitHub Pages hospeda somente o frontend estático: ele não executa esta API nem consegue acessar um PostgreSQL instalado no computador. A API atual usa senhas em texto puro e bloqueia autenticação e CRUD fora do ambiente local, inclusive em produção. Por isso, publicar o frontend não disponibiliza o login. Antes do uso publicado, é necessário implementar autenticação segura e hospedar a API e o banco em serviços acessíveis pela internet; configure as credenciais e `SESSION_SECRET` no ambiente do servidor, nunca no Vue ou em variáveis `VITE_*`.
 
 Configure a variável pública `VITE_API_BASE_URL` no GitHub Actions com a URL da API. No backend, configure `FRONTEND_ORIGINS` com a origem do site e use HTTPS. Cookies entre domínios diferentes podem ser bloqueados pelo navegador; para produção, prefira frontend e API em domínios do mesmo site (por exemplo, subdomínios de um domínio próprio). Use também um usuário PostgreSQL próprio para a aplicação, com permissões mínimas, em vez do superusuário `postgres`.

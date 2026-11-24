@@ -5,7 +5,7 @@
     <title>G Confeitaria | Redirecionando</title>
     <script>
       sessionStorage.setItem('gconfeitaria:redirect', location.pathname + location.search + location.hash)
-      location.replace('/')
+      location.replace(location.hostname.toLowerCase() === 'lucascnasc.github.io' ? '/gconfeitaria/' : '/')
     </script>
   </head>
   <body>
