@@ -1,22 +1,27 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { authError, login } from '../services/auth.js'
 
 const router = useRouter()
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
-const error = ref('')
+const error = ref(authError.value)
+const submitting = ref(false)
 
-function login() {
-  if (!username.value.trim() || !password.value.trim()) {
-    error.value = 'Informe um usuário e uma senha que não estejam em branco.'
-    return
-  }
-
+async function submitLogin() {
   error.value = ''
-  sessionStorage.setItem('gconfeitaria:username', username.value.trim())
-  router.push({ name: 'dashboard' })
+  authError.value = ''
+  submitting.value = true
+  try {
+    await login(username.value, password.value)
+    await router.push({ name: 'dashboard' })
+  } catch (loginError) {
+    error.value = loginError.message
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -55,7 +60,7 @@ function login() {
         <h2>Entre na sua conta</h2>
         <p class="subtitle">Acesse seu espaço de gestão.</p>
 
-        <form @submit.prevent="login">
+        <form @submit.prevent="submitLogin">
           <label for="username">Usuário</label>
           <input id="username" v-model="username" name="username" autocomplete="username" placeholder="Digite seu usuário" required />
 
@@ -68,10 +73,12 @@ function login() {
           </div>
 
           <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-          <button class="primary-button" type="submit">Entrar <span aria-hidden="true">→</span></button>
+          <button class="primary-button" type="submit" :disabled="submitting">
+            {{ submitting ? 'Entrando...' : 'Entrar' }} <span aria-hidden="true">→</span>
+          </button>
         </form>
 
-        <p class="prototype-note"><strong>Modo demonstração.</strong> Informe qualquer usuário e senha não vazios. Este acesso não protege dados.</p>
+        <p class="prototype-note">Entre com o usuário e a senha cadastrados.</p>
       </div>
       <p class="form-footer">Feito com carinho para a sua confeitaria <span>♡</span></p>
     </section>
