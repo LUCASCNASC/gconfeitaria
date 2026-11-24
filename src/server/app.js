@@ -10,6 +10,16 @@ import { createUsersRouter } from './users.js'
 
 const sessionCookieName = 'gconfeitaria.sid'
 
+async function findSessionUser(pool, id) {
+  const result = await pool.query(
+    `SELECT u.id, u.username, t.name AS role FROM users u
+     LEFT JOIN user_types t ON t.id = u.user_type AND t.deleted_at IS NULL
+     WHERE u.id = $1 AND u.is_active = true AND u.deleted_at IS NULL`,
+    [id],
+  )
+  return result.rows[0]
+}
+
 function regenerateSession(req) {
   return new Promise((resolve, reject) => {
     req.session.regenerate((error) => (error ? reject(error) : resolve()))
@@ -96,8 +106,9 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
 
     try {
       const result = await pool.query(
-        `SELECT id, username, password, is_active FROM users
-         WHERE lower(username) = lower($1) AND deleted_at IS NULL`,
+        `SELECT u.id, u.username, u.password, u.is_active, t.name AS role FROM users u
+         LEFT JOIN user_types t ON t.id = u.user_type AND t.deleted_at IS NULL
+         WHERE lower(u.username) = lower($1) AND u.deleted_at IS NULL`,
         [username],
       )
       const user = result.rows[0]
@@ -115,7 +126,7 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
       await regenerateSession(req)
       req.session.userId = user.id
       await saveSession(req)
-      res.json({ user: { id: user.id, username: user.username } })
+      res.json({ user: { id: user.id, username: user.username, role: user.role } })
     } catch (error) {
       next(error)
     }
@@ -125,17 +136,13 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
     if (!req.session.userId) return res.json({ user: null })
 
     try {
-      const result = await pool.query(
-        'SELECT id, username FROM users WHERE id = $1 AND is_active = true AND deleted_at IS NULL',
-        [req.session.userId],
-      )
-      const user = result.rows[0]
+      const user = await findSessionUser(pool, req.session.userId)
       if (!user) {
         await destroySession(req)
         res.clearCookie(sessionCookieName, { path: '/' })
         return res.json({ user: null })
       }
-      res.json({ user: { id: user.id, username: user.username } })
+      res.json({ user })
     } catch (error) {
       next(error)
     }
@@ -156,9 +163,30 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
     }
   })
 
-  app.use('/api/users', createUsersRouter(pool))
+  async function requireUser(req, res, next) {
+    if (!req.session.userId) return res.status(401).json({ error: 'Faça login para continuar.' })
+    try {
+      const user = await findSessionUser(pool, req.session.userId)
+      if (!user) {
+        await destroySession(req)
+        res.clearCookie(sessionCookieName, { path: '/' })
+        return res.status(401).json({ error: 'Sessão inválida ou usuário inativo.' })
+      }
+      req.user = user
+      next()
+    } catch (error) {
+      next(error)
+    }
+  }
 
-  app.get('/api/user-types', localOnly, async (req, res, next) => {
+  function requireAdmin(req, res, next) {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Acesso restrito a administradores.' })
+    next()
+  }
+
+  app.use('/api/users', localOnly, requireUser, createUsersRouter(pool))
+
+  app.get('/api/user-types', localOnly, requireUser, requireAdmin, async (req, res, next) => {
     try {
       const result = await pool.query('SELECT id, name FROM user_types WHERE deleted_at IS NULL ORDER BY name, id')
       res.json({ user_types: result.rows })

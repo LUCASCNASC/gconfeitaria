@@ -1,18 +1,15 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '../components/AppLayout.vue'
 import { request } from '../services/api.js'
 import { authUser } from '../services/auth.js'
-import { userNotice } from '../services/users.js'
 
 const route = useRoute()
 const router = useRouter()
 const users = ref([])
 const loading = ref(true)
 const error = ref('')
-const notice = ref(userNotice.value)
-userNotice.value = ''
 
 const columns = ref([
   { key: 'name', label: 'Nome', width: 180 },
@@ -31,12 +28,6 @@ const page = computed(() => {
 const visibleUsers = computed(() => users.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 const tableWidth = computed(() => columns.value.reduce((sum, column) => sum + column.width, 0))
 let resizing = null
-let noticeTimer
-
-function dismissNotice() {
-  clearTimeout(noticeTimer)
-  notice.value = ''
-}
 
 async function loadUsers() {
   loading.value = true
@@ -80,11 +71,7 @@ function resizeWithKeyboard(event, column) {
   setWidth(column, column.width + (event.key === 'ArrowRight' ? 10 : -10))
 }
 
-onMounted(() => {
-  if (notice.value) noticeTimer = setTimeout(dismissNotice, 3000)
-  loadUsers()
-})
-onUnmounted(() => clearTimeout(noticeTimer))
+onMounted(loadUsers)
 </script>
 
 <template>
@@ -99,10 +86,6 @@ onUnmounted(() => clearTimeout(noticeTimer))
         <RouterLink class="create-user-link" :to="{ name: 'user-create' }">＋ Cadastrar usuário</RouterLink>
       </div>
 
-      <div v-if="notice" class="success-toast">
-        <p role="status">{{ notice }}</p>
-        <button type="button" aria-label="Fechar mensagem de sucesso" @click="dismissNotice">×</button>
-      </div>
       <p v-if="loading" role="status">Carregando usuários...</p>
       <div v-else-if="error">
         <p class="form-error" role="alert">{{ error }}</p>

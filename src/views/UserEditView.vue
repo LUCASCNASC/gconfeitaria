@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '../components/AppLayout.vue'
 import { request } from '../services/api.js'
@@ -15,26 +15,36 @@ const passwordForm = reactive({ password: '', confirm_password: '' })
 const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
+let loadVersion = 0
 const ownAccount = computed(() => user.value && user.value.id === authUser.value?.id)
-const listLocation = computed(() => ({ name: 'users', query: { pagina: route.query.pagina || 1 } }))
+const listLocation = computed(() => authUser.value?.role === 'ADMIN'
+  ? { name: 'users', query: { pagina: route.query.pagina || 1 } }
+  : { name: 'dashboard' })
 
 async function loadUser() {
+  const version = ++loadVersion
+  const id = route.params.id
   loading.value = true
   error.value = ''
+  user.value = null
+  Object.assign(passwordForm, { password: '', confirm_password: '' })
   try {
-    const result = await request(`/api/users/${encodeURIComponent(route.params.id)}`)
+    const result = await request(`/api/users/${encodeURIComponent(id)}`)
+    if (version !== loadVersion) return
     user.value = result.user
     if (!ownAccount.value) {
       const typesResult = await request('/api/user-types')
+      if (version !== loadVersion) return
       types.value = typesResult.user_types
     }
     const currentType = types.value.find((type) => type.id === result.user.role_id)
     Object.assign(form, { email: result.user.email, role: currentType?.id ?? '', is_active: result.user.is_active })
   } catch (loadError) {
+    if (version !== loadVersion) return
     user.value = null
     error.value = loadError.message
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -63,7 +73,7 @@ async function saveUser() {
   }
 }
 
-onMounted(loadUser)
+watch(() => route.params.id, loadUser, { immediate: true })
 </script>
 
 <template>
@@ -101,7 +111,7 @@ onMounted(loadUser)
         <button class="primary-button" type="submit" :disabled="submitting || (!ownAccount && types.length === 0)">{{ submitting ? 'Salvando...' : ownAccount ? 'Alterar senha' : 'Concluir edição' }}</button>
       </form>
       <button v-if="error && !user && !loading" class="retry-button" type="button" @click="loadUser">Tentar novamente</button>
-      <RouterLink class="back-link" :to="listLocation">← Voltar para usuários</RouterLink>
+      <RouterLink class="back-link" :to="listLocation">{{ authUser?.role === 'ADMIN' ? '← Voltar para usuários' : '← Voltar para o dashboard' }}</RouterLink>
     </main>
   </AppLayout>
 </template>

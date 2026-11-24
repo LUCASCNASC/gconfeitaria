@@ -1,12 +1,26 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { logout } from '../services/auth.js'
+import { authUser, logout } from '../services/auth.js'
+import { userNotice } from '../services/users.js'
 
 const router = useRouter()
 const menu = ref(null)
 const error = ref('')
 const signingOut = ref(false)
+const notice = ref(userNotice.value)
+userNotice.value = ''
+let noticeTimer
+
+function dismissNotice() {
+  clearTimeout(noticeTimer)
+  notice.value = ''
+}
+
+onMounted(() => {
+  if (notice.value) noticeTimer = setTimeout(dismissNotice, 3000)
+})
+onUnmounted(() => clearTimeout(noticeTimer))
 
 function openMenu() {
   error.value = ''
@@ -59,8 +73,11 @@ async function signOut() {
           <RouterLink :to="{ name: 'dashboard' }" @click="closeMenu">
             <span aria-hidden="true">⌂</span> Dashboard
           </RouterLink>
-          <RouterLink :to="{ name: 'users' }" @click="closeMenu">
+          <RouterLink v-if="authUser?.role === 'ADMIN'" :to="{ name: 'users' }" @click="closeMenu">
             <span aria-hidden="true">＋</span> Cadastrar usuário
+          </RouterLink>
+          <RouterLink v-if="authUser" :to="{ name: 'user-edit', params: { id: authUser.id } }" @click="closeMenu">
+            <span aria-hidden="true">♙</span> Minha conta
           </RouterLink>
         </nav>
 
@@ -73,6 +90,10 @@ async function signOut() {
       </div>
     </dialog>
 
+    <div v-if="notice" class="success-toast">
+      <p role="status">{{ notice }}</p>
+      <button type="button" aria-label="Fechar mensagem de sucesso" @click="dismissNotice">×</button>
+    </div>
     <slot />
   </div>
 </template>

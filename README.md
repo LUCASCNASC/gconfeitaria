@@ -2,7 +2,7 @@
 
 Aplicação de gestão com frontend Vue 3/Vite e API Express conectada ao PostgreSQL.
 
-**Somente para testes locais:** a leitura e o cadastro de usuários não exigem autenticação, e as senhas são gravadas em texto puro. O login compara a senha com esse texto. A API de usuários e a autenticação só respondem a requisições locais e são desativadas quando `NODE_ENV=production`. Não use senhas reais ou dados sensíveis.
+**Somente para testes locais:** as senhas são gravadas em texto puro e o login compara a senha com esse texto. A API de usuários e a autenticação só respondem a requisições locais e são desativadas quando `NODE_ENV=production`. Não use senhas reais ou dados sensíveis.
 
 Os scripts `db:init` e `user:create` são da versão anterior e esperam `password_hash`; eles ainda não são compatíveis com a tabela atual, que possui uma coluna `password`.
 
@@ -37,11 +37,13 @@ Requisitos: Node.js 22, npm e PostgreSQL em execução.
 
 No dashboard, abra o menu lateral para acessar **Cadastrar usuário**. A listagem inclui usuários ativos e inativos, com 15 por página e colunas redimensionáveis. Após um cadastro ou edição bem-sucedidos, a aplicação retorna à listagem com uma mensagem de confirmação exibida por 3 segundos. Nos formulários de cadastro e edição, selecione um tipo não excluído de `user_types`; se o tipo atual de um usuário tiver sido excluído, escolha outro para concluir a edição. O usuário pode alterar a própria senha, mas os demais dados da própria conta ficam apenas para visualização e não podem ser editados ou excluídos. No cadastro e na troca de senha, a confirmação deve ser exatamente igual à senha. Usuários novos são ativos por padrão. Um usuário desativado não consegue entrar, e sua sessão deixa de ser válida.
 
+Somente usuários com tipo ativo `ADMIN` podem listar e gerenciar usuários e consultar os tipos. Os demais usuários autenticados acessam **Minha conta** no menu para consultar seus dados e trocar a própria senha. O tipo e o status são verificados novamente pela API a cada solicitação.
+
 ## API local de usuários
 
 Base: `http://127.0.0.1:3001`. Os endpoints não retornam a senha. IDs são strings para preservar inteiros grandes do PostgreSQL. Nas respostas de usuários, `role` é o nome do tipo e `role_id` é o ID armazenado em `users.user_type`; nos corpos de criação e edição, `role` recebe o ID do tipo.
 
-PUT, PATCH e DELETE exigem sessão autenticada. PUT, PATCH de status e DELETE não permitem alterar ou excluir a própria conta; PATCH de senha permite somente alterar a própria senha. Sem sessão, retornam `401`; alterações não permitidas retornam `403`.
+Todos os endpoints de usuários e tipos exigem sessão autenticada. Apenas `ADMIN` pode listar, criar, editar ou excluir usuários e consultar tipos; outros usuários só podem consultar o próprio cadastro e alterar a própria senha. PUT, PATCH de status e DELETE não permitem alterar ou excluir a própria conta; PATCH de senha permite somente alterar a própria senha. Sem sessão, retornam `401`; acessos não permitidos retornam `403`.
 
 | Método | Rota | Descrição |
 | --- | --- | --- |

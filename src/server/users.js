@@ -1,5 +1,4 @@
 import express from 'express'
-import { localOnly } from './local-only.js'
 
 const userFields = 'u.id, u.name, u.username, u.email, t.name AS role, u.user_type AS role_id, u.is_active, u.last_login_at, u.created_at, u.updated_at, u.deleted_at'
 
@@ -57,11 +56,12 @@ function isOwnUser(req) {
 export function createUsersRouter(pool) {
   const router = express.Router()
 
-  router.use(localOnly)
-
   router.use((req, res, next) => {
-    if (['PUT', 'PATCH', 'DELETE'].includes(req.method) && req.session.userId == null) {
-      return res.status(401).json({ error: 'Faça login para alterar usuários.' })
+    const profilePath = `/${req.user.id}`
+    const ownProfile = (req.method === 'GET' && req.path === profilePath) ||
+      (req.method === 'PATCH' && req.path === `${profilePath}/password`)
+    if (req.user.role !== 'ADMIN' && !ownProfile) {
+      return res.status(403).json({ error: 'Acesso restrito a administradores.' })
     }
     next()
   })

@@ -14,8 +14,8 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'login', component: LoginView },
     { path: '/dashboard', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true } },
-    { path: '/usuarios', name: 'users', component: UsersView, meta: { requiresAuth: true } },
-    { path: '/usuarios/novo', name: 'user-create', component: UserCreateView, meta: { requiresAuth: true } },
+    { path: '/usuarios', name: 'users', component: UsersView, meta: { requiresAuth: true, requiresAdmin: true } },
+    { path: '/usuarios/novo', name: 'user-create', component: UserCreateView, meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/usuarios/:id/editar', name: 'user-edit', component: UserEditView, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
@@ -27,6 +27,10 @@ router.beforeEach(async (to) => {
   try {
     const user = await getCurrentUser()
     if (!user) return { name: 'login' }
+    if (user.role !== 'ADMIN' &&
+        (to.meta.requiresAdmin || (to.name === 'user-edit' && to.params.id !== String(user.id)))) {
+      return { name: 'dashboard' }
+    }
   } catch (error) {
     authError.value = error.message
     return { name: 'login' }

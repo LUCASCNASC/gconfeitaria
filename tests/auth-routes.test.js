@@ -5,11 +5,11 @@ import test from 'node:test'
 import { createApp } from '../src/server/app.js'
 
 test('login cria sessão, identifica o usuário e logout a encerra', async () => {
-  const user = { id: '7', username: 'confeiteira', password: 'senha-de-teste-segura', is_active: true }
+  const user = { id: '7', username: 'confeiteira', password: 'senha-de-teste-segura', is_active: true, role: 'ADMIN' }
   const pool = {
     async query(sql) {
-      if (sql.includes('SELECT id, username, password')) return { rows: [user] }
-      if (sql.includes('WHERE id = $1')) return { rows: [user] }
+      if (sql.includes('u.password')) return { rows: [user] }
+      if (sql.includes('WHERE u.id = $1')) return { rows: [{ id: user.id, username: user.username, role: user.role }] }
       return { rows: [] }
     },
   }
@@ -24,10 +24,10 @@ test('login cria sessão, identifica o usuário e logout a encerra', async () =>
     .post('/api/auth/login')
     .send({ username: ' Confeiteira ', password: 'senha-de-teste-segura' })
   assert.equal(loginResponse.status, 200)
-  assert.deepEqual(loginResponse.body, { user: { id: '7', username: 'confeiteira' } })
+  assert.deepEqual(loginResponse.body, { user: { id: '7', username: 'confeiteira', role: 'ADMIN' } })
 
   const sessionResponse = await client.get('/api/auth/me')
-  assert.deepEqual(sessionResponse.body, { user: { id: '7', username: 'confeiteira' } })
+  assert.deepEqual(sessionResponse.body, { user: { id: '7', username: 'confeiteira', role: 'ADMIN' } })
 
   const logoutResponse = await client.post('/api/auth/logout')
   assert.equal(logoutResponse.status, 204)
@@ -80,10 +80,10 @@ test('sessão é encerrada se o usuário deixar de estar ativo', async () => {
   const app = createApp({
     pool: {
       async query(sql) {
-        if (sql.includes('SELECT id, username, password')) {
-          return { rows: [{ id: '7', username: 'confeiteira', password: 'senha-de-teste', is_active: true }] }
+        if (sql.includes('u.password')) {
+          return { rows: [{ id: '7', username: 'confeiteira', password: 'senha-de-teste', is_active: true, role: 'ADMIN' }] }
         }
-        assert.match(sql, /is_active = true AND deleted_at IS NULL/)
+        assert.match(sql, /u.is_active = true AND u.deleted_at IS NULL/)
         return { rows: [] }
       },
     },
