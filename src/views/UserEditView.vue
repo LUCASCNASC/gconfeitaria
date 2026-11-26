@@ -104,9 +104,10 @@ watch(() => route.params.id, loadUser, { immediate: true })
         </label>
         <template v-if="ownAccount">
           <label for="edit-password">Nova senha</label>
-          <input id="edit-password" v-model="passwordForm.password" type="password" autocomplete="new-password" maxlength="255" required />
+          <input id="edit-password" v-model="passwordForm.password" type="password" autocomplete="new-password" minlength="12" maxlength="255" required />
           <label for="edit-confirm-password">Confirmar nova senha</label>
           <input id="edit-confirm-password" v-model="passwordForm.confirm_password" type="password" autocomplete="new-password" maxlength="255" required />
+          <p class="prototype-note">A nova senha deve ter pelo menos 12 caracteres.</p>
         </template>
         <button class="primary-button" type="submit" :disabled="submitting || (!ownAccount && types.length === 0)">{{ submitting ? 'Salvando...' : ownAccount ? 'Alterar senha' : 'Concluir edição' }}</button>
       </form>

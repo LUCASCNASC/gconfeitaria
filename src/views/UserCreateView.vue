@@ -62,7 +62,7 @@ async function createUser() {
         <label for="email">E-mail</label>
         <input id="email" v-model="form.email" name="email" type="email" autocomplete="off" maxlength="255" required />
         <label for="new-password">Senha</label>
-        <input id="new-password" v-model="form.password" name="password" type="password" autocomplete="new-password" maxlength="255" required />
+        <input id="new-password" v-model="form.password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="255" required />
         <label for="confirm-password">Confirmar senha</label>
         <input id="confirm-password" v-model="form.confirm_password" name="confirm_password" type="password" autocomplete="new-password" maxlength="255" required />
         <label for="role">Tipo de usuário</label>
@@ -73,7 +73,7 @@ async function createUser() {
         <p v-if="typesError" class="form-error" role="alert">{{ typesError }}</p>
         <button v-if="typesError" class="retry-button" type="button" @click="loadTypes">Tentar carregar tipos novamente</button>
         <p v-else-if="!loadingTypes && types.length === 0" class="form-error" role="alert">Nenhum tipo de usuário disponível.</p>
-        <p class="prototype-note">Novos usuários são cadastrados como ativos. Use apenas dados de teste: a senha é armazenada em texto puro nesta etapa.</p>
+        <p class="prototype-note">Novos usuários são cadastrados como ativos. A senha deve ter pelo menos 12 caracteres.</p>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary-button" type="submit" :disabled="submitting || loadingTypes || !!typesError || types.length === 0">{{ submitting ? 'Cadastrando...' : 'Cadastrar usuário' }}</button>
       </form>

@@ -1,4 +1,5 @@
 import express from 'express'
+import { hashPassword } from './passwords.js'
 
 const userFields = 'u.id, u.name, u.username, u.email, t.name AS role, u.user_type AS role_id, u.is_active, u.last_login_at, u.created_at, u.updated_at, u.deleted_at'
 
@@ -7,8 +8,8 @@ function validateId(id) {
 }
 
 function validatePassword(password, confirmation) {
-  if (typeof password !== 'string' || !password.trim() || Array.from(password).length > 255) {
-    return 'A senha deve ser um texto não vazio de até 255 caracteres.'
+  if (typeof password !== 'string' || !password.trim() || Array.from(password).length < 12 || Array.from(password).length > 255) {
+    return 'A senha deve ter entre 12 e 255 caracteres e não pode conter apenas espaços.'
   }
   if (typeof confirmation !== 'string' || password !== confirmation) {
     return 'As senhas não coincidem.'
@@ -53,7 +54,7 @@ function isOwnUser(req) {
   return req.session.userId != null && String(req.session.userId) === req.params.id
 }
 
-export function createUsersRouter(pool) {
+export function createUsersRouter(pool, fingerprintPassword) {
   const router = express.Router()
 
   router.use((req, res, next) => {
@@ -97,6 +98,7 @@ export function createUsersRouter(pool) {
 
     try {
       const { name, username, email, password, role, is_active = true } = req.body
+      const passwordHash = await hashPassword(password)
       const result = await pool.query(
         `WITH selected_type AS (
            SELECT id FROM user_types WHERE id = $5 AND deleted_at IS NULL FOR SHARE
@@ -105,7 +107,7 @@ export function createUsersRouter(pool) {
            SELECT $1, $2, $3, $4, id, $6 FROM selected_type RETURNING *
          )
          SELECT ${userFields} FROM inserted u JOIN user_types t ON t.id = u.user_type`,
-        [name.trim(), username.trim(), email.trim(), password, role, is_active],
+        [name.trim(), username.trim(), email.trim(), passwordHash, role, is_active],
       )
       if (!result.rows[0]) return res.status(400).json({ error: 'Tipo de usuário inexistente ou excluído.' })
       res.status(201).json({ user: result.rows[0] })
@@ -122,13 +124,16 @@ export function createUsersRouter(pool) {
       return res.status(400).json({ error: 'Informe os dados do usuário.' })
     }
     const fullUpdate = ['name', 'username', 'password'].some((field) => Object.hasOwn(req.body, field))
-    const error = fullUpdate ? validateUser(req.body, true) : validateEditableUser(req.body, true)
+    const error = fullUpdate
+      ? validateUser(req.body, true) || validatePassword(req.body.password, req.body.confirm_password)
+      : validateEditableUser(req.body, true)
     if (error) return res.status(400).json({ error })
     try {
       const { email, role, is_active } = req.body
       let result
       if (fullUpdate) {
         const { name, username, password } = req.body
+        const passwordHash = await hashPassword(password)
         result = await pool.query(
           `WITH selected_type AS (SELECT id FROM user_types WHERE id = $5 AND deleted_at IS NULL FOR SHARE),
            updated AS (
@@ -137,7 +142,7 @@ export function createUsersRouter(pool) {
              FROM selected_type WHERE users.id = $7 AND users.deleted_at IS NULL RETURNING users.*
            )
            SELECT ${userFields} FROM updated u JOIN user_types t ON t.id = u.user_type`,
-          [name.trim(), username.trim(), email.trim(), password, role, is_active, req.params.id],
+          [name.trim(), username.trim(), email.trim(), passwordHash, role, is_active, req.params.id],
         )
       } else {
         result = await pool.query(
@@ -169,12 +174,14 @@ export function createUsersRouter(pool) {
     if (error) return res.status(400).json({ error })
 
     try {
+      const passwordHash = await hashPassword(req.body.password)
       const result = await pool.query(
         `UPDATE users SET password = $1, updated_at = NOW()
          WHERE id = $2 AND is_active = true AND deleted_at IS NULL RETURNING id`,
-        [req.body.password, req.params.id],
+        [passwordHash, req.params.id],
       )
       if (!result.rows[0]) return res.status(404).json({ error: 'Usuário não encontrado ou inativo.' })
+      req.session.passwordFingerprint = fingerprintPassword(passwordHash)
       res.status(204).end()
     } catch (error) {
       next(error)

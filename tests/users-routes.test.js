@@ -3,6 +3,9 @@ import session from 'express-session'
 import request from 'supertest'
 import test from 'node:test'
 import { createApp } from '../src/server/app.js'
+import { hashPassword, verifyPassword } from '../src/server/passwords.js'
+
+const testPasswordHash = await hashPassword('senha-de-teste')
 
 const userInput = {
   name: 'Maria',
@@ -18,11 +21,11 @@ function createTestApp(query, state = { role: 'ADMIN', active: true }) {
   return createApp({
     pool: {
       query(sql, params) {
-        if (sql.includes('u.password')) {
-          return Promise.resolve({ rows: [{ id: '7', username: 'maria', password: 'senha-de-teste', is_active: true, role: state.role }] })
+        if (sql.includes('lower(u.username)')) {
+          return Promise.resolve({ rows: [{ id: '7', username: 'maria', password: testPasswordHash, is_active: true, role: state.role }] })
         }
-        if (sql.startsWith('SELECT u.id, u.username, t.name AS role')) {
-          return Promise.resolve({ rows: state.active ? [{ id: '7', username: 'maria', role: state.role }] : [] })
+        if (sql.startsWith('SELECT u.id, u.username, u.password, t.name AS role')) {
+          return Promise.resolve({ rows: state.active ? [{ id: '7', username: 'maria', password: state.passwordHash ?? testPasswordHash, role: state.role }] : [] })
         }
         return query(sql, params)
       },
@@ -42,7 +45,8 @@ test('criação valida dados e não inclui senha na resposta', async () => {
   const app = createTestApp(async (sql, params) => {
     assert.match(sql, /INSERT INTO users/)
     assert.match(sql, /deleted_at IS NULL FOR SHARE/)
-    assert.deepEqual(params, ['Maria', 'maria', 'maria@example.test', 'senha-de-teste', '2', true])
+    assert.deepEqual([params[0], params[1], params[2], params[4], params[5]], ['Maria', 'maria', 'maria@example.test', '2', true])
+    assert.equal(await verifyPassword('senha-de-teste', params[3]), true)
     assert.doesNotMatch(sql.split('RETURNING')[1], /\bpassword\b/)
     return { rows: [{ id: '1', name: 'Maria', username: 'maria', email: 'maria@example.test' }] }
   })
@@ -169,14 +173,15 @@ test('usuário altera somente a própria senha com confirmação exata', async (
     assert.match(sql, /SET password = \$1, updated_at = NOW\(\)/)
     assert.match(sql, /is_active = true AND deleted_at IS NULL/)
     assert.match(sql, /RETURNING id/)
-    assert.deepEqual(params, [' Nova senha ', '7'])
+    assert.equal(params[1], '7')
+    assert.equal(await verifyPassword(' Nova senha segura ', params[0]), true)
     return { rows: [{ id: '7' }] }
   })
   const client = await authenticatedClient(app)
-  const body = { password: ' Nova senha ', confirm_password: ' Nova senha ' }
+  const body = { password: ' Nova senha segura ', confirm_password: ' Nova senha segura ' }
   assert.equal((await client.patch('/api/users/8/password').send(body)).status, 403)
-  assert.equal((await client.patch('/api/users/7/password').send({ ...body, confirm_password: ' Nova Senha ' })).status, 400)
-  assert.equal((await client.patch('/api/users/7/password').send({ ...body, confirm_password: 'Nova senha' })).status, 400)
+  assert.equal((await client.patch('/api/users/7/password').send({ ...body, confirm_password: ' Nova Senha segura ' })).status, 400)
+  assert.equal((await client.patch('/api/users/7/password').send({ ...body, confirm_password: 'Nova senha segura' })).status, 400)
   assert.equal((await client.patch('/api/users/7/password').send({ password: body.password })).status, 400)
   assert.equal((await client.patch('/api/users/7/password').send({ password: ' ', confirm_password: ' ' })).status, 400)
   assert.equal((await client.patch('/api/users/7/password').send({ password: 'a'.repeat(256), confirm_password: 'a'.repeat(256) })).status, 400)
@@ -188,7 +193,7 @@ test('usuário altera somente a própria senha com confirmação exata', async (
 test('usuário inativo ou excluído não altera a própria senha', async () => {
   const app = createTestApp(async () => ({ rows: [] }))
   const client = await authenticatedClient(app)
-  assert.equal((await client.patch('/api/users/7/password').send({ password: 'nova', confirm_password: 'nova' })).status, 404)
+  assert.equal((await client.patch('/api/users/7/password').send({ password: 'nova-senha-segura', confirm_password: 'nova-senha-segura' })).status, 404)
 })
 
 test('alterações exigem sessão autenticada', async () => {
@@ -205,9 +210,12 @@ test('alterações exigem sessão autenticada', async () => {
 
 test('somente ADMIN gerencia usuários; usuário comum acessa apenas o próprio cadastro e senha', async () => {
   const state = { role: 'ATENDENTE', active: true }
-  const app = createTestApp(async (sql) => {
+  const app = createTestApp(async (sql, params) => {
     if (sql.startsWith('SELECT ')) return { rows: [{ id: '7', username: 'maria' }] }
-    if (sql.includes('SET password')) return { rows: [{ id: '7' }] }
+    if (sql.includes('SET password')) {
+      state.passwordHash = params[0]
+      return { rows: [{ id: '7' }] }
+    }
     throw new Error('Não deve alterar outro usuário')
   }, state)
   const client = await authenticatedClient(app)
@@ -220,13 +228,29 @@ test('somente ADMIN gerencia usuários; usuário comum acessa apenas o próprio 
   assert.equal((await client.patch('/api/users/8/password').send({ password: 'nova', confirm_password: 'nova' })).status, 403)
   assert.equal((await client.delete('/api/users/8')).status, 403)
   assert.equal((await client.get('/api/users/7')).status, 200)
-  assert.equal((await client.patch('/api/users/7/password').send({ password: 'nova', confirm_password: 'nova' })).status, 204)
+  assert.equal((await client.patch('/api/users/7/password').send({ password: 'nova-senha-segura', confirm_password: 'nova-senha-segura' })).status, 204)
   state.role = 'ADMIN'
   assert.equal((await client.get('/api/users')).status, 200)
   state.role = 'ATENDENTE'
   assert.equal((await client.get('/api/users')).status, 403)
   state.active = false
   assert.equal((await client.get('/api/users/7')).status, 401)
+})
+
+test('troca de senha encerra outras sessões e preserva a sessão atual', async () => {
+  const state = { role: 'ATENDENTE', active: true, passwordHash: testPasswordHash }
+  const app = createTestApp(async (sql, params) => {
+    if (sql.includes('SET password')) {
+      state.passwordHash = params[0]
+      return { rows: [{ id: '7' }] }
+    }
+    return { rows: [{ id: '7', username: 'maria' }] }
+  }, state)
+  const current = await authenticatedClient(app)
+  const other = await authenticatedClient(app)
+  assert.equal((await current.patch('/api/users/7/password').send({ password: 'nova-senha-segura', confirm_password: 'nova-senha-segura' })).status, 204)
+  assert.equal((await current.get('/api/users/7')).status, 200)
+  assert.equal((await other.get('/api/users/7')).status, 401)
 })
 
 test('lista tipos não excluídos e rejeita cadastro com tipo indisponível', async () => {
@@ -247,12 +271,10 @@ test('lista tipos não excluídos e rejeita cadastro com tipo indisponível', as
   assert.equal((await client.post('/api/users').send(withoutRole)).status, 400)
 })
 
-test('bloqueia a API local em produção e em host externo', async () => {
+test('bloqueia a API de desenvolvimento em host externo', async () => {
   const app = createTestApp(async () => { throw new Error('Não deve acessar o banco') })
   const originalNodeEnv = process.env.NODE_ENV
   try {
-    process.env.NODE_ENV = 'production'
-    assert.equal((await request(app).get('/api/users')).status, 403)
     process.env.NODE_ENV = 'test'
     assert.equal((await request(app).get('/api/users').set('Host', 'example.com')).status, 403)
   } finally {

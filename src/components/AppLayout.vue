@@ -70,14 +70,14 @@ async function signOut() {
 
         <p class="side-menu-label">MENU PRINCIPAL</p>
         <nav class="side-menu-nav" aria-label="Navegação principal">
+          <RouterLink v-if="authUser" :to="{ name: 'user-edit', params: { id: authUser.id } }" @click="closeMenu">
+            <span aria-hidden="true">♙</span> Minha conta
+          </RouterLink>
           <RouterLink :to="{ name: 'dashboard' }" @click="closeMenu">
             <span aria-hidden="true">⌂</span> Dashboard
           </RouterLink>
           <RouterLink v-if="authUser?.role === 'ADMIN'" :to="{ name: 'users' }" @click="closeMenu">
             <span aria-hidden="true">＋</span> Cadastrar usuário
-          </RouterLink>
-          <RouterLink v-if="authUser" :to="{ name: 'user-edit', params: { id: authUser.id } }" @click="closeMenu">
-            <span aria-hidden="true">♙</span> Minha conta
           </RouterLink>
         </nav>
 

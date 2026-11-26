@@ -7,7 +7,10 @@ import UserCreateView from './views/UserCreateView.vue'
 import UsersView from './views/UsersView.vue'
 import UserEditView from './views/UserEditView.vue'
 import { authError, getCurrentUser } from './services/auth.js'
+import { restoreRedirect } from './services/redirect.js'
 import './style.css'
+
+restoreRedirect(window)
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
