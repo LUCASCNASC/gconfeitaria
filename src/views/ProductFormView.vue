@@ -7,6 +7,7 @@ import { useUnsavedChanges } from '../composables/useUnsavedChanges.js'
 import { apiUrl, request } from '../services/api.js'
 import { catalogNotice } from '../services/catalog.js'
 import { MAX_PRODUCT_PHOTO_BYTES, normalizePrice } from '../services/product-validation.js'
+import { formatPriceInput } from '../services/product-price-input.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,7 +78,7 @@ async function load() {
       hasStoredPhoto.value = product.has_photo
       Object.assign(form, {
         name: product.name, code: product.code ?? '', description: product.description ?? '',
-        sale_price: product.sale_price, cost_price: product.cost_price, is_active: product.is_active,
+        sale_price: product.sale_price.replace('.', ','), cost_price: product.cost_price.replace('.', ','), is_active: product.is_active,
         category_id: product.category_id ?? '', menu_ids: product.menus.map((menu) => menu.id),
       })
       unavailableMenus.value = product.menus.filter((menu) => !menus.value.some((option) => option.id === menu.id))
@@ -98,7 +99,7 @@ async function load() {
 function validate() {
   Object.keys(validation).forEach((key) => delete validation[key])
   if (!form.name.trim()) validation.name = 'Campo obrigatório'
-  for (const [field, label] of [['sale_price', 'Preço'], ['cost_price', 'Preço de custo']]) {
+  for (const [field, label] of [['sale_price', 'Preço (Kg)'], ['cost_price', 'Preço de custo (Kg)']]) {
     if (!form[field].trim()) validation[field] = 'Campo obrigatório'
     else if (!normalizePrice(form[field])) validation[field] = `${label} deve ser maior que zero, com até duas casas decimais.`
   }
@@ -110,6 +111,46 @@ function validate() {
   }
   if (photoError.value) validation.photo = photoError.value
   return !Object.keys(validation).length
+}
+
+function updatePrice(field, input) {
+  const digitsAfterCursor = input.value.slice(input.selectionStart).replace(/\D/g, '').length
+  const formatted = formatPriceInput(input.value)
+  let cursor = formatted.length
+  let remaining = digitsAfterCursor
+  for (let index = formatted.length - 1; index >= 0 && remaining; index--) {
+    if (/\d/.test(formatted[index]) && --remaining === 0) cursor = index
+  }
+  form[field] = formatted
+  input.value = formatted
+  input.setSelectionRange(cursor, cursor)
+}
+
+function handlePriceDeletion(event) {
+  const input = event.target
+  const start = input.selectionStart
+  if (start !== input.selectionEnd) return
+  if (event.key === 'Backspace' && input.value[start - 1] === ',') input.setSelectionRange(start - 2, start)
+  if (event.key === 'Delete' && input.value[start] === ',') input.setSelectionRange(start, start + 2)
+}
+
+function handlePriceBeforeInput(field, event) {
+  const input = event.target
+  const cursor = input.selectionStart
+  if (!event.cancelable || cursor !== input.selectionEnd) return
+  let start
+  let end
+  if (event.inputType === 'deleteContentBackward' && input.value[cursor - 1] === ',') {
+    start = cursor - 2
+    end = cursor
+  } else if (event.inputType === 'deleteContentForward' && input.value[cursor] === ',') {
+    start = cursor
+    end = cursor + 2
+  } else return
+  event.preventDefault()
+  input.value = input.value.slice(0, start) + input.value.slice(end)
+  input.setSelectionRange(start, start)
+  updatePrice(field, input)
 }
 
 async function selectPhoto(event) {
@@ -241,11 +282,11 @@ onBeforeUnmount(() => { loadVersion++; photoReadVersion++ })
           <textarea id="product-description" v-model="form.description" class="catalog-description" rows="3"></textarea>
           <label for="product-code">Código</label>
           <input id="product-code" v-model="form.code" maxlength="50" />
-          <label for="product-sale-price">Preço *</label>
-          <input id="product-sale-price" v-model="form.sale_price" inputmode="decimal" required :aria-invalid="!!validation.sale_price" :aria-describedby="validation.sale_price ? 'product-sale-price-error' : undefined" />
+          <label for="product-sale-price">Preço (Kg) *</label>
+          <input id="product-sale-price" v-model="form.sale_price" inputmode="numeric" required :aria-invalid="!!validation.sale_price" :aria-describedby="validation.sale_price ? 'product-sale-price-error' : undefined" @input="updatePrice('sale_price', $event.target)" @keydown="handlePriceDeletion" @beforeinput="handlePriceBeforeInput('sale_price', $event)" />
           <p v-if="validation.sale_price" id="product-sale-price-error" class="field-error">{{ validation.sale_price }}</p>
-          <label for="product-cost-price">Preço de custo *</label>
-          <input id="product-cost-price" v-model="form.cost_price" inputmode="decimal" required :aria-invalid="!!validation.cost_price" :aria-describedby="validation.cost_price ? 'product-cost-price-error' : undefined" />
+          <label for="product-cost-price">Preço de custo (Kg) *</label>
+          <input id="product-cost-price" v-model="form.cost_price" inputmode="numeric" required :aria-invalid="!!validation.cost_price" :aria-describedby="validation.cost_price ? 'product-cost-price-error' : undefined" @input="updatePrice('cost_price', $event.target)" @keydown="handlePriceDeletion" @beforeinput="handlePriceBeforeInput('cost_price', $event)" />
           <p v-if="validation.cost_price" id="product-cost-price-error" class="field-error">{{ validation.cost_price }}</p>
           <label for="product-category">Categoria *</label>
           <select id="product-category" v-model="form.category_id" required :aria-invalid="!!validation.category_id" :aria-describedby="validation.category_id ? 'product-category-error' : undefined">

@@ -69,6 +69,12 @@ async function signOut() {
         <span class="brand-mark">g<span>.</span></span>
         <span class="brand-name">g confeitaria<small>feito com carinho</small></span>
       </RouterLink>
+      <div class="header-logout">
+        <button class="header-logout-button" type="button" :disabled="signingOut" @click="signOut">
+          <span aria-hidden="true">↪</span> {{ signingOut ? 'Saindo...' : 'Sair' }}
+        </button>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+      </div>
     </header>
 
     <dialog ref="menu" class="side-menu" aria-label="Menu de navegação" @click.self="closeMenuOnBackdrop" @keydown.esc.prevent="closeMenu">
