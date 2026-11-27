@@ -214,7 +214,7 @@ export function createClientsRouter(pool) {
              marketing_consent_version, marketing_consent_withdrawn_at, marketing_consent_withdrawn_by)
            VALUES (${keys.map((_, index) => `$${index + 1}`).join(', ')}, $${consentIndex},
              CASE WHEN $${consentIndex} THEN NOW() END,
-             CASE WHEN $${consentIndex} THEN $${actorIndex} END,
+             CASE WHEN $${consentIndex} THEN $${actorIndex}::bigint END,
              CASE WHEN $${consentIndex} THEN 'v1' END, NULL, NULL)
            RETURNING id`,
           [...keys.map((key) => fields[key]), marketingConsent, req.user.id],

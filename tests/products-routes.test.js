@@ -138,9 +138,25 @@ test('rejeita foto inválida, formato divergente e arquivos acima do limite', as
   for (const photo of [
     'data:image/gif;base64,R0lGODlh', 'data:image/png;base64,SGVsbG8=',
     `data:image/jpeg;base64,${png.toString('base64')}`, 'data:image/png;base64,!!!!',
-    `data:image/png;base64,${Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64')}`, ['foto'],
+    `data:image/png;base64,${Buffer.alloc(3 * 1024 * 1024 + 1).toString('base64')}`, ['foto'],
   ]) assert.equal((await agent.post('/api/products').send({ ...input, photo })).status, 400)
   assert.equal((await agent.post('/api/products').send({ ...input, photo: 'x'.repeat(7 * 1024 * 1024 + 1) })).status, 413)
+})
+
+test('aceita exatamente 3 MiB e rejeita uma foto um byte maior', async () => {
+  const agent = await login(setup(async (sql) => {
+    if (sql.startsWith('SELECT id FROM categories')) return { rows: [{ id: '1' }] }
+    if (sql.startsWith('SELECT id FROM menus')) return { rows: [{ id: '1' }, { id: '2' }] }
+    if (sql.startsWith('INSERT INTO products')) return { rows: [{ id: '5' }] }
+    if (sql.startsWith('INSERT INTO file_product')) return { rows: [{ id: '10' }] }
+    if (sql.startsWith('SELECT p.id')) return { rows: [{ id: '5', menus: [] }] }
+    return { rows: [] }
+  }))
+  const photo = Buffer.alloc(3 * 1024 * 1024)
+  png.copy(photo)
+  assert.equal((await agent.post('/api/products').send({ ...input, photo: `data:image/png;base64,${photo.toString('base64')}` })).status, 201)
+  const tooLarge = Buffer.concat([photo, Buffer.alloc(1)])
+  assert.equal((await agent.post('/api/products').send({ ...input, photo: `data:image/png;base64,${tooLarge.toString('base64')}` })).status, 400)
 })
 
 test('foto é consultada apenas no produto vinculado e responde com o tipo correto', async () => {

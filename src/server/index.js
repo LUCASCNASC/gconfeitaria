@@ -3,7 +3,7 @@ import connectPgSimple from 'connect-pg-simple'
 import session from 'express-session'
 import { createApp } from './app.js'
 import { pool } from './database.js'
-import { passwordMigration } from './migrate-passwords.js'
+import { verifyDatabase } from './verify-database.js'
 
 const requiredVariables = ['SESSION_SECRET']
 const missingVariables = requiredVariables.filter((name) => !process.env[name])
@@ -41,11 +41,7 @@ const app = createApp({
 })
 
 try {
-  await pool.query('SELECT 1')
-  const migration = await pool.query('SELECT 1 FROM gconfeitaria_migrations WHERE name = $1', [passwordMigration])
-  if (!migration.rowCount) throw new Error('Migração de senhas ausente. Crie um backup e execute npm run db:migrate-passwords.')
-  const invalid = await pool.query("SELECT 1 FROM users WHERE password !~ '^scrypt[$][A-Za-z0-9_-]{22}[$][A-Za-z0-9_-]{86}$' OR password IS NULL LIMIT 1")
-  if (invalid.rowCount) throw new Error('Existem senhas sem proteção; não é possível iniciar a API.')
+  await verifyDatabase(pool)
   const host = process.env.HOST ?? (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1')
   const server = app.listen(port, host, () => {
     console.log(`API pronta em http://${host}:${port}`)

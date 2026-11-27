@@ -45,7 +45,7 @@ function destroySession(req) {
   })
 }
 
-export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = [], cookieSameSite = 'lax', staticDir }) {
+export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = [], cookieSameSite = 'lax', staticDir, loginStore }) {
   if (!pool || !sessionSecret || sessionSecret.length < 32) {
     throw new Error('A API requer pool do PostgreSQL e SESSION_SECRET com pelo menos 32 caracteres.')
   }
@@ -113,6 +113,7 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' },
+    ...(loginStore ? { store: loginStore } : {}),
   })
 
   app.get('/api/health', async (req, res, next) => {

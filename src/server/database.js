@@ -27,7 +27,7 @@ if (process.env.DATABASE_URL) {
   }
 }
 
-export const pool = new Pool({ ...config, connectionTimeoutMillis: 5000 })
+export const pool = new Pool({ ...config, connectionTimeoutMillis: 5000, ...(process.env.VERCEL ? { max: 2 } : {}) })
 
 pool.on('error', (error) => {
   console.error('Erro inesperado no pool do PostgreSQL:', error.message)

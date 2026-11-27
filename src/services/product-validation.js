@@ -1,4 +1,4 @@
-export const MAX_PRODUCT_PHOTO_BYTES = 5 * 1024 * 1024
+export const MAX_PRODUCT_PHOTO_BYTES = 3 * 1024 * 1024
 
 export function normalizePrice(value) {
   if (typeof value !== 'string') return null

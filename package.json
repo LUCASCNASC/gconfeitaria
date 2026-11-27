@@ -9,6 +9,7 @@
     "dev:full": "concurrently -k \"npm:dev:api\" \"npm:dev\"",
     "start:api": "node src/server/index.js",
     "db:init": "node scripts/init-db.js",
+    "db:prepare-empty": "node scripts/prepare-empty-database.js",
     "db:password": "node scripts/set-db-password.js",
     "db:migrate-passwords": "node scripts/migrate-passwords.js",
     "user:create": "node scripts/create-user.js",

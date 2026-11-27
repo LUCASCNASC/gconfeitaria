@@ -127,7 +127,7 @@ async function selectPhoto(event) {
     return
   }
   if (!file.size || file.size > MAX_PRODUCT_PHOTO_BYTES) {
-    photoError.value = 'A foto deve ter até 5 MB.'
+    photoError.value = 'A foto deve ter até 3 MiB.'
     return
   }
   photoReading.value = true
@@ -268,7 +268,7 @@ onBeforeUnmount(() => { loadVersion++; photoReadVersion++ })
           <p v-if="validation.menu_ids" id="product-menus-error" class="field-error">{{ validation.menu_ids }}</p>
           <label for="product-photo">Foto do produto</label>
           <input id="product-photo" type="file" accept=".jpeg,.jpg,.png,image/jpeg,image/png" :aria-invalid="!!(photoError || validation.photo)" aria-describedby="product-photo-help product-photo-error" @change="selectPhoto" />
-          <p id="product-photo-help" class="product-menus-help">Uma foto em JPEG, JPG ou PNG, de até 5 MB.</p>
+          <p id="product-photo-help" class="product-menus-help">Uma foto em JPEG, JPG ou PNG, de até 3 MiB.</p>
           <p v-if="photoReading" role="status">Carregando foto...</p>
           <p id="product-photo-error" class="field-error" role="alert">{{ photoError || validation.photo }}</p>
           <button v-if="photoError" type="button" class="photo-error-dismiss" @click="dismissPhotoError">Descartar seleção inválida</button>

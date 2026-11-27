@@ -6,6 +6,34 @@ As senhas são armazenadas como hashes scrypt. O backend usa sessões persistida
 
 Os scripts `db:init` e `user:create` são da versão anterior e esperam `password_hash`; eles ainda não são compatíveis com a tabela atual, que possui uma coluna `password`.
 
+## Preparar publicação na Vercel com Neon
+
+O projeto inclui uma Function para a API e regras para as rotas do frontend. A publicação precisa ser testada na Vercel após o deploy; executar os passos abaixo não copia dados do banco local.
+
+1. Prepare **somente um banco Neon novo e vazio**. No terminal do projeto, execute:
+
+   ```bash
+   npm run db:prepare-empty
+   ```
+
+   Cole a URL de conexão completa do Neon no campo oculto. Confirme o banco e informe nome, usuário, e-mail e senha do primeiro administrador. A URL e a senha não são salvas pelo script; a senha é gravada no banco como hash scrypt. O comando recusa um esquema `public` não vazio, executa a criação em transação e não migra clientes, produtos ou outros dados locais. Ele cria as opções de tipos de usuário, sexo e orientação já usadas no banco local. Não envie a URL ou a senha para o chat, GitHub ou capturas de tela.
+
+2. Em **Vercel → projeto → Settings → Environment Variables**, configure para **Production**:
+
+   | Nome | Valor |
+   | --- | --- |
+   | `DATABASE_URL` | URL completa do banco Neon, incluindo a senha; use a conexão com pooling. |
+   | `SESSION_SECRET` | Chave aleatória privada com pelo menos 32 caracteres, gerada com `node -p "require('node:crypto').randomBytes(48).toString('base64url')"` no seu computador. |
+   | `FRONTEND_ORIGINS` | `https://gconfeitaria.vercel.app` |
+   | `TRUST_PROXY` | `true` |
+   | `NODEJS_HELPERS` | `0` |
+
+   Mantenha `VITE_API_BASE_URL` vazia ou ausente para usar a mesma origem e não configure segredos em variáveis `VITE_`. A função exige `NODE_ENV=production` e valida TLS, origem, sessões e a migração de senhas; `NODEJS_HELPERS=0` preserva o processamento de JSON pelo Express. Defina essas variáveis como sensíveis quando essa opção estiver disponível.
+
+3. Faça commit e push das alterações e aguarde o deploy de produção no GitHub/Vercel. Alterações nas variáveis exigem novo deploy. Confira `https://gconfeitaria.vercel.app/api/health` e, depois, entre com o administrador criado. Não compartilhe as credenciais.
+
+As sessões e o limite de tentativas de login ficam no PostgreSQL, compartilhados pelas instâncias da Function. Sessões expiradas e registros antigos do limite são removidos durante tentativas de login. Os planos gratuitos têm limites e podem mudar; consulte as condições vigentes da Vercel e do Neon, inclusive para uso comercial, antes de armazenar dados reais.
+
 ## Executar localmente
 
 Requisitos: Node.js 22, npm e PostgreSQL em execução.
@@ -47,7 +75,7 @@ A API `/api/categories` oferece as mesmas operações e regras de autenticação
 
 A API `/api/products` oferece GET (lista e item), POST, PUT e DELETE para usuários autenticados. POST e PUT exigem `name`, `sale_price`, `cost_price`, `is_active`, `category_id` e `menu_ids` com um ou dois IDs distintos; `code` e `description` são opcionais. Os preços são textos decimais positivos com até duas casas (vírgula ou ponto), limitados a `99999999,99`. Os vínculos são armazenados em `menu_procuct`; a exclusão do produto e dos vínculos é lógica. Categorias e menus excluídos não podem ser selecionados. Produtos antigos sem categoria ou menu permanecem na listagem, mas precisam ter esses campos preenchidos na edição.
 
-O cadastro permite uma foto opcional JPEG/JPG ou PNG de até 5 MiB. A imagem pode ser visualizada pela coluna **Imagem** da listagem, substituída ou removida na edição e é salva em `file_product`, com referência em `products.id_file`; fotos substituídas ou removidas são excluídas logicamente e continuam ocupando espaço no banco. POST e PUT aceitam `photo` como data URL base64 com tipo `image/jpeg` ou `image/png`: no PUT, omitir `photo` preserva a foto e enviar `null` a remove. As respostas de produto incluem `has_photo`, e `GET /api/products/:id/photo` retorna a imagem para usuários autenticados. O limite de JSON de produtos com foto é 7 MiB; as demais rotas mantêm o limite geral de 10 KB.
+O cadastro permite uma foto opcional JPEG/JPG ou PNG de até 3 MiB. A imagem pode ser visualizada pela coluna **Imagem** da listagem, substituída ou removida na edição e é salva em `file_product`, com referência em `products.id_file`; fotos substituídas ou removidas são excluídas logicamente e continuam ocupando espaço no banco. POST e PUT aceitam `photo` como data URL base64 com tipo `image/jpeg` ou `image/png`: no PUT, omitir `photo` preserva a foto e enviar `null` a remove. As respostas de produto incluem `has_photo`, e `GET /api/products/:id/photo` retorna a imagem para usuários autenticados. O limite do corpo JSON de produtos é 4.400.000 bytes; as demais rotas mantêm o limite geral de 10 KB. Uma foto antiga maior que 4.400.000 bytes não pode ser exibida na Vercel: ela não é apagada, mas deve ser substituída por outra de até 3 MiB.
 
 Somente usuários com tipo ativo `ADMIN` podem listar e gerenciar usuários e consultar os tipos. Os demais usuários autenticados não têm acesso à listagem nem a um atalho de conta no menu. O tipo e o status são verificados novamente pela API a cada solicitação.
 

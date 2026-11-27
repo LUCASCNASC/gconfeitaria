@@ -49,11 +49,11 @@ function parsePhoto(value) {
   if (typeof value !== 'string') throw new ProductError(400, 'Selecione uma foto JPEG ou PNG válida.')
   const match = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
   if (!match || match[2].length % 4 !== 0 || match[2].length > Math.ceil(MAX_PRODUCT_PHOTO_BYTES / 3) * 4) {
-    throw new ProductError(400, 'Selecione uma foto JPEG ou PNG de até 5 MB.')
+    throw new ProductError(400, 'Selecione uma foto JPEG ou PNG de até 3 MiB.')
   }
   const bytes = Buffer.from(match[2], 'base64')
   if (bytes.length > MAX_PRODUCT_PHOTO_BYTES || bytes.toString('base64') !== match[2] || photoType(bytes) !== match[1]) {
-    throw new ProductError(400, 'Selecione uma foto JPEG ou PNG de até 5 MB.')
+    throw new ProductError(400, 'Selecione uma foto JPEG ou PNG de até 3 MiB.')
   }
   return bytes
 }
@@ -121,7 +121,7 @@ async function transaction(pool, operation) {
 
 export function createProductsRouter(pool) {
   const router = express.Router()
-  const productJson = express.json({ limit: '7mb' })
+  const productJson = express.json({ limit: 4400000 })
 
   router.get('/', async (req, res, next) => {
     try { res.json({ products: await readProducts(pool, null) }) } catch (error) { next(error) }
@@ -137,6 +137,7 @@ export function createProductsRouter(pool) {
       )
       if (!result.rows.length) throw new ProductError(404, 'Foto não encontrada.')
       const bytes = result.rows[0].file_data
+      if (process.env.VERCEL && bytes.length > 4400000) throw new ProductError(413, 'Esta foto antiga excede o limite da hospedagem; substitua-a por uma foto de até 3 MiB.')
       const type = photoType(bytes)
       if (!type) throw new ProductError(422, 'A foto armazenada não é um JPEG ou PNG válido.')
       res.set('Cache-Control', 'no-store').type(type).send(bytes)
