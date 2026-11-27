@@ -2,6 +2,8 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '../components/AppLayout.vue'
+import UnsavedChangesDialog from '../components/UnsavedChangesDialog.vue'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js'
 import { request } from '../services/api.js'
 import { userNotice } from '../services/users.js'
 
@@ -12,6 +14,10 @@ const submitting = ref(false)
 const types = ref([])
 const loadingTypes = ref(true)
 const typesError = ref('')
+const { dialog: unsavedDialog, markSaved } = useUnsavedChanges(() => JSON.stringify(form), {
+  isBusy: () => submitting.value,
+  onBusy: () => { error.value = 'Aguarde a conclusão do cadastro.' },
+})
 
 async function loadTypes() {
   loadingTypes.value = true
@@ -38,6 +44,8 @@ async function createUser() {
   submitting.value = true
   try {
     await request('/api/users', { method: 'POST', body: JSON.stringify(form) })
+    markSaved()
+    submitting.value = false
     userNotice.value = 'Usuário cadastrado com sucesso.'
     await router.push({ name: 'users' })
   } catch (createError) {
@@ -55,6 +63,7 @@ async function createUser() {
       <h1>Cadastrar usuário</h1>
       <p class="subtitle">Preencha os dados para adicionar um novo usuário.</p>
       <form class="user-form" @submit.prevent="createUser">
+        <fieldset class="user-form-fields" :disabled="submitting">
         <label for="name">Nome</label>
         <input id="name" v-model="form.name" name="name" autocomplete="name" maxlength="150" required />
         <label for="new-username">Usuário</label>
@@ -75,9 +84,11 @@ async function createUser() {
         <p v-else-if="!loadingTypes && types.length === 0" class="form-error" role="alert">Nenhum tipo de usuário disponível.</p>
         <p class="prototype-note">Novos usuários são cadastrados como ativos. A senha deve ter pelo menos 12 caracteres.</p>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button class="primary-button" type="submit" :disabled="submitting || loadingTypes || !!typesError || types.length === 0">{{ submitting ? 'Cadastrando...' : 'Cadastrar usuário' }}</button>
+        <button class="primary-button complete-button" type="submit" :disabled="submitting || loadingTypes || !!typesError || types.length === 0">{{ submitting ? 'Cadastrando...' : 'Cadastrar usuário' }}</button>
+        </fieldset>
       </form>
       <RouterLink class="back-link" :to="{ name: 'users' }">← Voltar para usuários</RouterLink>
+      <UnsavedChangesDialog ref="unsavedDialog" />
     </main>
   </AppLayout>
 </template>

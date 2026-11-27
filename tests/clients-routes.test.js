@@ -7,14 +7,14 @@ import { hashPassword } from '../src/server/passwords.js'
 
 const password = await hashPassword('senha-de-teste')
 const address = { cep: '12345-678', city: 'Cidade', state: 'sp', street: 'Rua A', neighborhood: 'Centro', number: '10' }
-const input = { name: 'Pessoa Teste', birth_date: '1990-01-02', sex_id: '1', telefone: '11999999999', addresses: [address] }
+const input = { name: 'Pessoa Teste', birth_date: '1990-01-02', sex_id: '1', telefone: '11999999999', addresses: [address], marketing_consent: true }
 
-function setup(query = async () => ({ rows: [] })) {
+function setup(query = async () => ({ rows: [] }), role = 'ADMIN') {
   const db = { query, release() {} }
   const pool = {
     async query(sql, params) {
-      if (sql.includes('lower(u.username)')) return { rows: [{ id: '7', username: 'teste', password, is_active: true, role: 'ATENDENTE' }] }
-      if (sql.startsWith('SELECT u.id, u.username, u.password')) return { rows: [{ id: '7', username: 'teste', password, role: 'ATENDENTE' }] }
+      if (sql.includes('lower(u.username)')) return { rows: [{ id: '7', username: 'teste', password, is_active: true, role }] }
+      if (sql.startsWith('SELECT u.id, u.username, u.password')) return { rows: [{ id: '7', username: 'teste', password, role }] }
       return query(sql, params)
     },
     async connect() { return db },
@@ -38,6 +38,18 @@ test('clientes e opções exigem autenticação', async () => {
   assert.equal((await request(app).delete('/api/clients/1')).status, 401)
 })
 
+test('somente ADMIN pode consultar ou alterar clientes', async () => {
+  const agent = await login(setup(async () => { throw new Error('Usuário comum não deve acessar dados de clientes') }, 'ATENDENTE'))
+  const responses = [
+    await agent.get('/api/clients'),
+    await agent.get('/api/clients/1'),
+    await agent.post('/api/clients').send(input),
+    await agent.put('/api/clients/1').send({ name: 'Alterado' }),
+    await agent.delete('/api/clients/1'),
+  ]
+  assert.deepEqual(responses.map((response) => response.status), [403, 403, 403, 403, 403])
+})
+
 test('valida campos obrigatórios, datas, formatos e endereços antes de gravar', async () => {
   const agent = await login(setup(async () => { throw new Error('Não deve acessar dados de clientes') }))
   for (const bad of [
@@ -52,8 +64,76 @@ test('valida campos obrigatórios, datas, formatos e endereços antes de gravar'
     { ...input, addresses: [{ ...address, number: '' }] },
     { ...input, addresses: [{ ...address, id: '1' }] },
   ]) assert.equal((await agent.post('/api/clients').send(bad)).status, 400)
+  for (const consent of ['true', null]) {
+    assert.equal((await agent.post('/api/clients').send({ ...input, marketing_consent: consent })).status, 400)
+  }
   assert.equal((await agent.put('/api/clients/0').send({ name: 'Teste' })).status, 400)
-  assert.equal((await agent.put('/api/clients/1').send({ addresses: [{ ...address, id: '1' }, { ...address, id: '1' }] })).status, 400)
+  assert.equal((await agent.put('/api/clients/1').send({ marketing_consent: true, addresses: [{ ...address, id: '1' }, { ...address, id: '1' }] })).status, 400)
+})
+
+test('POST sem opt-in cria o cliente sem marcar consentimento', async () => {
+  const calls = []
+  const agent = await login(setup(async (sql, params) => {
+    calls.push({ sql, params })
+    if (sql.startsWith('SELECT id FROM sex')) return { rows: [{ id: '1' }] }
+    if (sql.startsWith('INSERT INTO clients')) return { rows: [{ id: '5' }] }
+    if (sql.startsWith('SELECT c.id')) return { rows: [{ id: '5', marketing_consent: false, addresses: [] }] }
+    return { rows: [] }
+  }))
+  const { marketing_consent, ...withoutConsent } = input
+  const response = await agent.post('/api/clients').send(withoutConsent)
+  assert.equal(response.status, 201)
+  const insert = calls.find(({ sql }) => sql.startsWith('INSERT INTO clients'))
+  assert.match(insert.sql, /marketing_consent_withdrawn_at, marketing_consent_withdrawn_by/)
+  assert.equal(insert.params.at(-2), false)
+  assert.equal(insert.params.at(-1), '7')
+})
+
+test('PUT sem marketing_consent preserva o consentimento', async () => {
+  const calls = []
+  const agent = await login(setup(async (sql, params) => {
+    calls.push({ sql, params })
+    if (sql.startsWith('SELECT id FROM clients')) return { rows: [{ id: '5' }] }
+    if (sql.startsWith('SELECT c.id')) return { rows: [{ id: '5', marketing_consent: true, addresses: [] }] }
+    return { rows: [] }
+  }))
+  const response = await agent.put('/api/clients/5').send({ name: 'Alterado' })
+  assert.equal(response.status, 200)
+  const update = calls.find(({ sql }) => sql.startsWith('UPDATE clients SET'))
+  assert.match(update.sql, /name = \$1/)
+  assert.doesNotMatch(update.sql, /marketing_consent\s*=/)
+})
+
+test('PUT com consentimento false registra retirada e permite alterar somente o consentimento', async () => {
+  const calls = []
+  const agent = await login(setup(async (sql, params) => {
+    calls.push({ sql, params })
+    if (sql.startsWith('SELECT id FROM clients')) return { rows: [{ id: '5' }] }
+    if (sql.startsWith('SELECT c.id')) return { rows: [{ id: '5', marketing_consent: false, addresses: [] }] }
+    return { rows: [] }
+  }))
+  const response = await agent.put('/api/clients/5').send({ marketing_consent: false })
+  assert.equal(response.status, 200)
+  const update = calls.find(({ sql }) => sql.startsWith('UPDATE clients SET'))
+  assert.match(update.sql, /marketing_consent_withdrawn_at/)
+  assert.match(update.sql, /marketing_consent_withdrawn_by/)
+  assert.deepEqual(update.params, [false, '7', '5'])
+})
+
+test('PUT com consentimento true registra nova autorização e limpa retirada anterior', async () => {
+  const calls = []
+  const agent = await login(setup(async (sql, params) => {
+    calls.push({ sql, params })
+    if (sql.startsWith('SELECT id FROM clients')) return { rows: [{ id: '5' }] }
+    if (sql.startsWith('SELECT c.id')) return { rows: [{ id: '5', marketing_consent: true, addresses: [] }] }
+    return { rows: [] }
+  }))
+  const response = await agent.put('/api/clients/5').send({ marketing_consent: true })
+  assert.equal(response.status, 200)
+  const update = calls.find(({ sql }) => sql.startsWith('UPDATE clients SET'))
+  assert.match(update.sql, /marketing_consent_at = CASE WHEN \$1 THEN/)
+  assert.match(update.sql, /marketing_consent_withdrawn_at = CASE WHEN \$1 THEN NULL/)
+  assert.deepEqual(update.params, [true, '7', '5'])
 })
 
 test('POST cria cliente e endereços em transação e normaliza CEP e CPF', async () => {
@@ -77,6 +157,9 @@ test('POST cria cliente e endereços em transação e normaliza CEP e CPF', asyn
   assert.equal(response.body.client.id, '5')
   assert.equal(calls[0].sql, 'BEGIN')
   assert.equal(calls.at(-1).sql, 'COMMIT')
+  const insert = calls.find(({ sql }) => sql.startsWith('INSERT INTO clients'))
+  assert.match(insert.sql, /marketing_consent_at, marketing_consent_recorded_by,[\s\S]*marketing_consent_withdrawn_at/)
+  assert.equal(insert.params.at(-1), '7')
 })
 
 test('PUT rejeita endereço de outro cliente e desfaz a transação', async () => {
@@ -87,7 +170,7 @@ test('PUT rejeita endereço de outro cliente e desfaz a transação', async () =
     if (sql.startsWith('SELECT id FROM address')) return { rows: [{ id: '10' }] }
     return { rows: [] }
   }))
-  const response = await agent.put('/api/clients/5').send({ addresses: [{ ...address, id: '11' }] })
+  const response = await agent.put('/api/clients/5').send({ marketing_consent: true, addresses: [{ ...address, id: '11' }] })
   assert.equal(response.status, 400)
   assert.equal(calls.at(-1), 'ROLLBACK')
   assert.equal(calls.some((sql) => sql === 'COMMIT'), false)
@@ -105,6 +188,7 @@ test('PUT parcial preserva endereços omitidos e permite limpar campo opcional',
   assert.equal(response.status, 200)
   assert.equal(response.body.client.addresses.length, 1)
   assert.ok(calls.some(({ sql, params }) => sql.startsWith('UPDATE clients SET social_name') && params[0] === null))
+  assert.ok(calls.some(({ sql }) => sql.startsWith('UPDATE clients SET') && !/marketing_consent\s*=/.test(sql)))
   assert.equal(calls.some(({ sql }) => sql.includes('UPDATE address')), false)
 })
 

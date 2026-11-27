@@ -78,8 +78,14 @@ function validateFields(input, definitions, partial = false) {
 
 function parseInput(body, partial) {
   if (!isObject(body)) throw new ClientError(400, 'Informe os dados do cliente.')
-  const allowed = new Set([...Object.keys(clientFields), 'addresses'])
+  const allowed = new Set([...Object.keys(clientFields), 'addresses', 'marketing_consent'])
   if (Object.keys(body).some((key) => !allowed.has(key))) throw new ClientError(400, 'Há campos desconhecidos no cliente.')
+  const marketingConsent = Object.hasOwn(body, 'marketing_consent')
+    ? body.marketing_consent
+    : partial ? undefined : false
+  if (marketingConsent !== undefined && typeof marketingConsent !== 'boolean') {
+    throw new ClientError(400, 'O campo marketing_consent deve ser verdadeiro ou falso.')
+  }
   const fields = validateFields(body, clientFields, partial)
   let addresses
   if (Object.hasOwn(body, 'addresses')) {
@@ -98,8 +104,10 @@ function parseInput(body, partial) {
   } else if (!partial) {
     throw new ClientError(400, 'Informe pelo menos um endereço.')
   }
-  if (partial && !Object.keys(fields).length && addresses === undefined) throw new ClientError(400, 'Informe ao menos um campo para edição.')
-  return { fields, addresses }
+  if (partial && !Object.keys(fields).length && addresses === undefined && marketingConsent === undefined) {
+    throw new ClientError(400, 'Informe ao menos um campo para edição.')
+  }
+  return { fields, addresses, marketingConsent }
 }
 
 async function validateReferences(db, fields) {
@@ -147,7 +155,9 @@ async function replaceAddresses(db, clientId, addresses) {
 async function readClients(db, id) {
   const result = await db.query(
     `SELECT c.id, c.name, c.social_name, to_char(c.birth_date, 'YYYY-MM-DD') AS birth_date,
-       c.sex_id, c.sexual_orientation_id, c.cpf, c.telefone, c.email, c.created_at, c.updated_at,
+       c.sex_id, c.sexual_orientation_id, c.cpf, c.telefone, c.email, c.marketing_consent, c.marketing_consent_at,
+       c.marketing_consent_withdrawn_at, c.marketing_consent_withdrawn_by::text AS marketing_consent_withdrawn_by,
+       c.created_at, c.updated_at,
        COALESCE((SELECT json_agg(json_build_object(
          'id', a.id::text, 'cep', a.cep, 'city', a.city, 'state', a.state, 'street', a.street,
          'neighborhood', a.neighborhood, 'number', a.number, 'complement', a.complement,
@@ -192,12 +202,23 @@ export function createClientsRouter(pool) {
 
   router.post('/', async (req, res, next) => {
     try {
-      const { fields, addresses } = parseInput(req.body, false)
+      const { fields, addresses, marketingConsent } = parseInput(req.body, false)
       const client = await transaction(pool, async (db) => {
         await checkCpf(db, fields.cpf, null)
         await validateReferences(db, fields)
         const keys = Object.keys(fields)
-        const result = await db.query(`INSERT INTO clients (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, keys.map((key) => fields[key]))
+        const consentIndex = keys.length + 1
+        const actorIndex = keys.length + 2
+        const result = await db.query(
+          `INSERT INTO clients (${keys.join(', ')}, marketing_consent, marketing_consent_at, marketing_consent_recorded_by,
+             marketing_consent_version, marketing_consent_withdrawn_at, marketing_consent_withdrawn_by)
+           VALUES (${keys.map((_, index) => `$${index + 1}`).join(', ')}, $${consentIndex},
+             CASE WHEN $${consentIndex} THEN NOW() END,
+             CASE WHEN $${consentIndex} THEN $${actorIndex} END,
+             CASE WHEN $${consentIndex} THEN 'v1' END, NULL, NULL)
+           RETURNING id`,
+          [...keys.map((key) => fields[key]), marketingConsent, req.user.id],
+        )
         await replaceAddresses(db, result.rows[0].id, addresses)
         return (await readClients(db, result.rows[0].id))[0]
       })
@@ -208,18 +229,33 @@ export function createClientsRouter(pool) {
   router.put('/:id', async (req, res, next) => {
     try {
       if (!validId(req.params.id)) throw new ClientError(400, 'ID inválido.')
-      const { fields, addresses } = parseInput(req.body, true)
+      const { fields, addresses, marketingConsent } = parseInput(req.body, true)
       const client = await transaction(pool, async (db) => {
         if (fields.cpf != null) await checkCpf(db, fields.cpf, req.params.id)
         const current = await db.query('SELECT id FROM clients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [req.params.id])
         if (!current.rows.length) throw new ClientError(404, 'Cliente não encontrado.')
         await validateReferences(db, fields)
         const keys = Object.keys(fields)
-        if (keys.length) {
-          await db.query(`UPDATE clients SET ${keys.map((key, i) => `${key} = $${i + 1}`).join(', ')}, updated_at = NOW() WHERE id = $${keys.length + 1}`, [...keys.map((key) => fields[key]), req.params.id])
-        } else {
-          await db.query('UPDATE clients SET updated_at = NOW() WHERE id = $1', [req.params.id])
+        const assignments = keys.map((key, i) => `${key} = $${i + 1}`)
+        const values = keys.map((key) => fields[key])
+        if (marketingConsent !== undefined) {
+          const consentIndex = values.length + 1
+          const actorIndex = values.length + 2
+          assignments.push(
+            `marketing_consent = $${consentIndex}`,
+            `marketing_consent_at = CASE WHEN $${consentIndex} THEN CASE WHEN marketing_consent IS TRUE THEN marketing_consent_at ELSE NOW() END ELSE marketing_consent_at END`,
+            `marketing_consent_recorded_by = CASE WHEN $${consentIndex} AND marketing_consent IS NOT TRUE THEN $${actorIndex} ELSE marketing_consent_recorded_by END`,
+            `marketing_consent_version = CASE WHEN $${consentIndex} AND marketing_consent IS NOT TRUE THEN 'v1' ELSE marketing_consent_version END`,
+            `marketing_consent_withdrawn_at = CASE WHEN $${consentIndex} THEN NULL WHEN marketing_consent IS TRUE OR marketing_consent_withdrawn_at IS NULL THEN NOW() ELSE marketing_consent_withdrawn_at END`,
+            `marketing_consent_withdrawn_by = CASE WHEN $${consentIndex} THEN NULL WHEN marketing_consent IS TRUE OR marketing_consent_withdrawn_at IS NULL THEN $${actorIndex} ELSE marketing_consent_withdrawn_by END`,
+          )
+          values.push(marketingConsent, req.user.id)
         }
+        assignments.push('updated_at = NOW()')
+        await db.query(
+          `UPDATE clients SET ${assignments.join(', ')} WHERE id = $${values.length + 1}`,
+          [...values, req.params.id],
+        )
         if (addresses) await replaceAddresses(db, req.params.id, addresses)
         return (await readClients(db, req.params.id))[0]
       })
@@ -242,6 +278,7 @@ export function createClientsRouter(pool) {
   router.use((error, req, res, next) => {
     if (error instanceof ClientError) return res.status(error.status).json({ error: error.message })
     if (error.code === '23505' && error.constraint === 'idx_clients_cpf_active') return res.status(409).json({ error: 'CPF já cadastrado.' })
+    if (error.code === '42703' && error.message.includes('marketing_consent')) return res.status(503).json({ error: 'As migrações de consentimento de clientes ainda não foram aplicadas ao banco.' })
     next(error)
   })
   return router

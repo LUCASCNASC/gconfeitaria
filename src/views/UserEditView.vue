@@ -2,6 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '../components/AppLayout.vue'
+import UnsavedChangesDialog from '../components/UnsavedChangesDialog.vue'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js'
 import { request } from '../services/api.js'
 import { authUser } from '../services/auth.js'
 import { userNotice } from '../services/users.js'
@@ -14,12 +16,19 @@ const form = reactive({ email: '', role: '', is_active: true })
 const passwordForm = reactive({ password: '', confirm_password: '' })
 const loading = ref(true)
 const submitting = ref(false)
+const deleting = ref(false)
+const deleteDialog = ref(null)
+const deleteError = ref('')
 const error = ref('')
 let loadVersion = 0
 const ownAccount = computed(() => user.value && user.value.id === authUser.value?.id)
 const listLocation = computed(() => authUser.value?.role === 'ADMIN'
   ? { name: 'users', query: { pagina: route.query.pagina || 1 } }
   : { name: 'dashboard' })
+const { dialog: unsavedDialog, markSaved, dirty } = useUnsavedChanges(() => JSON.stringify({ form, passwordForm }), {
+  isBusy: () => submitting.value || deleting.value,
+  onBusy: () => { error.value = 'Aguarde a conclusão da operação.' },
+})
 
 async function loadUser() {
   const version = ++loadVersion
@@ -39,6 +48,7 @@ async function loadUser() {
     }
     const currentType = types.value.find((type) => type.id === result.user.role_id)
     Object.assign(form, { email: result.user.email, role: currentType?.id ?? '', is_active: result.user.is_active })
+    markSaved()
   } catch (loadError) {
     if (version !== loadVersion) return
     user.value = null
@@ -65,11 +75,39 @@ async function saveUser() {
       await request(path, { method: 'PUT', body: JSON.stringify(form) })
       userNotice.value = 'Usuário editado com sucesso.'
     }
+    markSaved()
+    submitting.value = false
     await router.push(listLocation.value)
   } catch (saveError) {
     error.value = saveError.message
   } finally {
     submitting.value = false
+  }
+}
+
+function openDeleteDialog() {
+  deleteError.value = ''
+  deleteDialog.value?.showModal()
+}
+
+function closeDeleteDialog() {
+  if (!deleting.value) deleteDialog.value?.close()
+}
+
+async function deleteUser() {
+  deleteError.value = ''
+  deleting.value = true
+  try {
+    await request(`/api/users/${encodeURIComponent(route.params.id)}`, { method: 'DELETE' })
+    deleteDialog.value?.close()
+    markSaved()
+    userNotice.value = 'Usuário excluído com sucesso.'
+    deleting.value = false
+    await router.push(listLocation.value)
+  } catch (deleteFailure) {
+    deleteError.value = deleteFailure.message
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -85,6 +123,7 @@ watch(() => route.params.id, loadUser, { immediate: true })
       <p v-if="loading" role="status">Carregando usuário...</p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <form v-if="user && !loading" class="user-form" @submit.prevent="saveUser">
+        <fieldset class="user-form-fields" :disabled="submitting || deleting">
         <label for="edit-name">Nome</label>
         <input id="edit-name" :value="user.name" readonly />
         <label for="edit-username">Usuário</label>
@@ -109,10 +148,23 @@ watch(() => route.params.id, loadUser, { immediate: true })
           <input id="edit-confirm-password" v-model="passwordForm.confirm_password" type="password" autocomplete="new-password" maxlength="255" required />
           <p class="prototype-note">A nova senha deve ter pelo menos 12 caracteres.</p>
         </template>
-        <button class="primary-button" type="submit" :disabled="submitting || (!ownAccount && types.length === 0)">{{ submitting ? 'Salvando...' : ownAccount ? 'Alterar senha' : 'Concluir edição' }}</button>
+        <button class="primary-button" :class="{ 'complete-button': !ownAccount }" type="submit" :disabled="submitting || (!ownAccount && types.length === 0)">{{ submitting ? 'Salvando...' : ownAccount ? 'Alterar senha' : 'Concluir edição' }}</button>
+        <button v-if="!ownAccount && authUser?.role === 'ADMIN'" class="delete-user-button" type="button" :disabled="submitting" @click="openDeleteDialog">Deletar usuário</button>
+        </fieldset>
       </form>
+      <dialog v-if="user && !loading && !ownAccount && authUser?.role === 'ADMIN'" ref="deleteDialog" class="confirm-dialog" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" @cancel.prevent="closeDeleteDialog">
+        <h2 id="delete-user-title">Confirmar exclusão</h2>
+        <p id="delete-user-description">Deseja excluir o usuário <strong>{{ user.name }}</strong>? Ele não aparecerá mais na lista.</p>
+        <p v-if="dirty()">As alterações não salvas também serão perdidas.</p>
+        <p v-if="deleteError" class="form-error" role="alert">{{ deleteError }}</p>
+        <div class="confirm-dialog-actions">
+          <button type="button" class="cancel-button" :disabled="deleting" autofocus @click="closeDeleteDialog">Cancelar</button>
+          <button type="button" class="delete-user-button" :disabled="deleting" @click="deleteUser">{{ deleting ? 'Excluindo...' : 'Confirmar exclusão' }}</button>
+        </div>
+      </dialog>
       <button v-if="error && !user && !loading" class="retry-button" type="button" @click="loadUser">Tentar novamente</button>
       <RouterLink class="back-link" :to="listLocation">{{ authUser?.role === 'ADMIN' ? '← Voltar para usuários' : '← Voltar para o dashboard' }}</RouterLink>
+      <UnsavedChangesDialog ref="unsavedDialog" />
     </main>
   </AppLayout>
 </template>

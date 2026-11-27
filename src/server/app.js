@@ -7,8 +7,11 @@ import session from 'express-session'
 import helmet from 'helmet'
 import { validateLoginInput } from './auth-utils.js'
 import { createClientsRouter } from './clients.js'
+import { createCatalogRouter } from './catalog.js'
 import { localOnly } from './local-only.js'
+import { createMenusRouter } from './menus.js'
 import { hashPassword, verifyPassword } from './passwords.js'
+import { createProductsRouter } from './products.js'
 import { createUsersRouter } from './users.js'
 
 const sessionCookieName = 'gconfeitaria.sid'
@@ -65,7 +68,9 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
   app.disable('x-powered-by')
   if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1)
 
-  app.use(helmet())
+  app.use(helmet({
+    contentSecurityPolicy: { directives: { connectSrc: ["'self'", 'https://viacep.com.br'] } },
+  }))
   app.use(cors({
     origin(origin, callback) {
       callback(null, !origin || allowedOrigins.includes(origin))
@@ -81,7 +86,12 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
     }
     next()
   })
-  app.use(express.json({ limit: '10kb' }))
+  const jsonParser = express.json({ limit: '10kb' })
+  app.use((req, res, next) => {
+    if ((req.method === 'POST' && /^\/api\/products\/?$/.test(req.path)) ||
+        (req.method === 'PUT' && /^\/api\/products\/[^/]+\/?$/.test(req.path))) return next()
+    jsonParser(req, res, next)
+  })
   app.use(session({
     name: sessionCookieName,
     secret: sessionSecret,
@@ -202,10 +212,16 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
   }
 
   app.use('/api/users', localOrProduction, requireUser, createUsersRouter(pool, fingerprintPassword))
-  app.use('/api/clients', localOrProduction, requireUser, (req, res, next) => {
+  app.use('/api/menus', localOrProduction, requireUser, createMenusRouter(pool))
+  app.use('/api/products', localOrProduction, requireUser, createProductsRouter(pool))
+  app.use('/api/categories', localOrProduction, requireUser, createCatalogRouter(pool, {
+    table: 'categories', singular: 'category', plural: 'categories', subject: 'da categoria', notFound: 'Categoria não encontrada.',
+    nameMax: 100, statusColumn: 'is_active',
+  }))
+  app.use('/api/clients', localOrProduction, (req, res, next) => {
     res.set('Cache-Control', 'no-store')
     next()
-  }, createClientsRouter(pool))
+  }, requireUser, requireAdmin, createClientsRouter(pool))
 
   for (const [route, table] of [['sex', 'sex'], ['sexual-orientations', 'sexual_orientation']]) {
     app.get(`/api/${route}`, localOrProduction, requireUser, async (req, res, next) => {
@@ -242,7 +258,7 @@ export function createApp({ pool, sessionStore, sessionSecret, allowedOrigins = 
 
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error)
-    console.error('Falha na API:', error.message)
+    console.error('Falha na API:', error.stack)
     res.status(500).json({ error: 'Não foi possível concluir a solicitação.' })
   })
 
