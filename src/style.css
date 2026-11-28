@@ -170,7 +170,14 @@ form input::placeholder { color: #b9afaa; }
 .active-control { display: flex; align-items: center; gap: 10px; }
 .active-control input { width: auto; accent-color: #b9796e; }
 .user-form input[readonly] { background: #f8f5f2; color: #746760; }
+.install-prompt { display: none; }
 @media (max-width: 760px) {
+  .install-prompt { display: block; position: fixed; z-index: 20; bottom: max(16px, env(safe-area-inset-bottom)); left: 16px; right: 16px; padding: 16px 42px 16px 16px; border: 1px solid #eee4de; border-radius: 12px; background: #fffaf7; box-shadow: 0 8px 24px #33221f24; }
+  .install-prompt p { margin: 0 0 10px; color: #805047; font-size: 13px; line-height: 1.5; }
+  .install-prompt p:last-child { margin-bottom: 0; }
+  .install-prompt-close { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: #805047; font-size: 22px; }
+  .install-prompt-button { border: 0; border-radius: 8px; padding: 10px 14px; background: #245fa6; color: #fff; font-weight: 700; }
+  .install-prompt-button:hover { background: #194a83; }
   .header-logout { display: none; }
   .side-menu-bottom { display: block; }
   .login-layout { display: block; }
