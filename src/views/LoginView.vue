@@ -56,7 +56,7 @@ async function submitLogin() {
     <section class="form-panel">
       <div class="mobile-brand"><span class="brand-mark">g<span>.</span></span> g confeitaria</div>
       <div class="login-card">
-        <p class="eyebrow">BEM-VINDA DE VOLTA</p>
+        <p class="eyebrow">BEM-VINDO DE VOLTA</p>
         <h2>Entre na sua conta</h2>
         <p class="subtitle">Acesse seu espaço de gestão.</p>
 
