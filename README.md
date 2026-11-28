@@ -34,6 +34,10 @@ O projeto inclui uma Function para a API e regras para as rotas do frontend. A p
 
 As sessões e o limite de tentativas de login ficam no PostgreSQL, compartilhados pelas instâncias da Function. Sessões expiradas e registros antigos do limite são removidos durante tentativas de login. Os planos gratuitos têm limites e podem mudar; consulte as condições vigentes da Vercel e do Neon, inclusive para uso comercial, antes de armazenar dados reais.
 
+## Adicionar à tela inicial
+
+Em navegadores compatíveis no Android, a aplicação pode oferecer **Adicionar à tela inicial** quando o navegador permitir a instalação. No iPhone, use o menu **Compartilhar → Adicionar à Tela de Início**. A disponibilidade e o momento da oferta dependem do navegador; também é possível procurar a opção no menu dele. A aplicação requer conexão com a internet e não armazena dados para uso offline.
+
 ## Executar localmente
 
 Requisitos: Node.js 22, npm e PostgreSQL em execução.
