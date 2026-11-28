@@ -12,7 +12,7 @@ import { authUser } from '../services/auth.js'
       <section class="dashboard-card">
         <span class="card-icon" aria-hidden="true">✳</span>
         <div>
-          <h2>Bem-vinda à G Confeitaria</h2>
+          <h2>Bem-vindo à G Confeitaria</h2>
           <p>Este é o início do seu espaço de gestão. Em breve, você poderá organizar sua confeitaria por aqui.</p>
         </div>
       </section>
